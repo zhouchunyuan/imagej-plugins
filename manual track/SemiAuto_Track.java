@@ -5,6 +5,7 @@ import ij.process.*;
 import java.awt.*;
 import java.awt.image.*;
 import java.awt.event.*;
+import java.io.*;
 
 
 /**
@@ -19,6 +20,7 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
         ImagePlus imp;
         CompositeImage cimp;
         int pos[][];
+        boolean isTracking=false;
 
         int currentMouseX;
         int currentMouseY;
@@ -57,7 +59,7 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
             }
             return sumAB/(Math.sqrt(sumAsqr)*Math.sqrt(sumBsqr));
         }
-        double correlation(byte[] a,byte[] b, byte meanb) {
+        double correlation(int[] a,int[] b, int meanb) {
 
             double sumAB=0;
             double sumAsqr=0,sumBsqr=0;
@@ -75,7 +77,7 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
             }
             return sumAB/(Math.sqrt(sumAsqr)*Math.sqrt(sumBsqr));
         }
-        int[] dosearch(ByteProcessor ip0, ByteProcessor ip1) {
+        int[] dosearch(ImageProcessor ip0, ImageProcessor ip1) {
             int w0 = ip0.getWidth();
             int h0 = ip0.getHeight();
             int w1 = ip1.getWidth();
@@ -89,14 +91,22 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
                     double R = Math.sqrt((x-currentRoiX)*(x-currentRoiX)+(y-currentRoiY)*(y-currentRoiY));
                     if (R < searchSize/2 ) {
                         ip1.setRoi(x - w0/2, y - h0/2, w0, h0);
-                        ByteProcessor tmp = (ByteProcessor)ip1.crop();
-
+                        ImageProcessor tmp = ip1.crop();
 
                         double mean2 = tmp.getStats().mean;
                         if (Math.abs(mean2-roimean)/roimean < 0.2) {
-                            byte[] array1 = (byte[])tmp.getPixels();
-                            byte[] array0 = (byte[])ip0.getPixels();
-                            double corr = correlation(array0,array1,(byte)mean2);
+
+                            int[] array1 = new int[w0*h0];
+                            int[] array0 = new int[w0*h0];
+                            for (int j=0;j<h0;j++) {
+                                for (int i=0;i<w0;i++) {
+                                    array1[w0*j+i]=tmp.getPixel(i,j);
+                                    array0[w0*j+i]=ip0.getPixel(i,j);
+                                }
+                            }
+
+
+                            double corr = correlation(array0,array1,(int)mean2);
                             if (corrMax < corr) {
                                 corrMax=corr;
                                 int sumI = 0;
@@ -113,10 +123,9 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
                                 yC = yC/sumI;
                                 x_max= x+(xC-w0/2);
                                 y_max= y+(yC-h0/2);
-                                //x_max = x;
-                                //y_max = y;
-                                //monitor(ip0,tmp);
+
                             }
+
                         }
                     }
                 }
@@ -239,58 +248,58 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
           控制外周尺寸，使中间1/4的区域占据90%的总亮度
           (x,y) : pixel position = offScreenXY
         */
-        void findFirstCell(int x,int y){
-                int centerSize = 0;
-                double centerOverOut = 0;
-                ImageProcessor ip = imp.getProcessor();
-                do{
-                        centerSize++;
-                        int outerSize = 2*centerSize;
-                        int sumAll = 0, sumIn = 0;
-                        for(int j=0;j<outerSize;j++){
-                                for(int i=0;i<outerSize;i++){
-                                        // 中心点是 x,y 宽outerSize
-                                        int in_x = i- outerSize/2;
-                                        int in_y = j- outerSize/2;
-                                        int v = ip.getPixel(x + in_x , y + in_y);
-                                        sumAll+=v;
-                                }
-                        }
-                        //先算出平均值，下面算中心比例时要减去mean/2
-                        //这样可以避免由于offset引起的对比度不高问题
-                        int mean = sumAll/(outerSize*outerSize);
-                        
-                        sumAll = 0;
-                        for(int j=0;j<outerSize;j++){
-                                for(int i=0;i<outerSize;i++){
-                                        // 中心点是 x,y 宽outerSize
-                                        int in_x = i- outerSize/2;
-                                        int in_y = j- outerSize/2;
-                                        int v = ip.getPixel(x + in_x , y + in_y)-mean/2;
-                                        sumAll+=v;
-                                        if(Math.abs(in_x)<=centerSize/2 && Math.abs(in_y)<=centerSize/2)sumIn+=v;
-                                }
-                        }
-                        
-                        centerOverOut = (double)sumIn/sumAll;
-                        //IJ.log("centerOverOut:"+centerOverOut);
-                        if(outerSize >= searchSize){
-                                IJ.error("can not find good size for this cell");
-                                break;
-                        }
-                        
-                }while(centerOverOut < 0.9);
-                roiSize = centerSize*2;
+        void findFirstCell(int x,int y) {
+            int centerSize = 0;
+            double centerOverOut = 0;
+            ImageProcessor ip = imp.getProcessor();
+            do {
+                centerSize++;
+                int outerSize = 2*centerSize;
+                int sumAll = 0, sumIn = 0;
+                for (int j=0;j<outerSize;j++) {
+                    for (int i=0;i<outerSize;i++) {
+                        // 中心点是 x,y 宽outerSize
+                        int in_x = i- outerSize/2;
+                        int in_y = j- outerSize/2;
+                        int v = ip.getPixel(x + in_x , y + in_y);
+                        sumAll+=v;
+                    }
+                }
+                //先算出平均值，下面算中心比例时要减去mean/2
+                //这样可以避免由于offset引起的对比度不高问题
+                int mean = sumAll/(outerSize*outerSize);
+
+                sumAll = 0;
+                for (int j=0;j<outerSize;j++) {
+                    for (int i=0;i<outerSize;i++) {
+                        // 中心点是 x,y 宽outerSize
+                        int in_x = i- outerSize/2;
+                        int in_y = j- outerSize/2;
+                        int v = ip.getPixel(x + in_x , y + in_y)-mean/2;
+                        sumAll+=v;
+                        if (Math.abs(in_x)<=centerSize/2 && Math.abs(in_y)<=centerSize/2)sumIn+=v;
+                    }
+                }
+
+                centerOverOut = (double)sumIn/sumAll;
+                //IJ.log("centerOverOut:"+centerOverOut);
+                if (outerSize >= searchSize) {
+                    IJ.error("can not find good size for this cell");
+                    break;
+                }
+
+            } while (centerOverOut < 0.9);
+            roiSize = centerSize*2;
         }
-        
+
         void markNextFrame() {
-            ByteProcessor target_ip = (ByteProcessor)imp.getProcessor().crop();
+            ImageProcessor target_ip = imp.getProcessor().crop();
             imp.setSlice(imp.getCurrentSlice()+1);
             //int[] xy = searchByStatistics(target_ip,(ByteProcessor)imp.getProcessor());
-            int[] xy = dosearch(target_ip,(ByteProcessor)imp.getProcessor());
+            int[] xy = dosearch(target_ip,imp.getProcessor());
             currentRoiX = xy[0];
             currentRoiY = xy[1];
-            //IJ.log("button1:"+currentRoiX+","+currentRoiY);
+            //IJ.log("btnAuto:"+currentRoiX+","+currentRoiY);
             imp.setRoi( currentRoiX-roiSize/2,currentRoiY-roiSize/2,roiSize,roiSize);
             pos[imp.getCurrentSlice()-1][0]=currentRoiX;
             pos[imp.getCurrentSlice()-1][1]=currentRoiY;
@@ -307,12 +316,38 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
                         Overlay o_mark = new Overlay(roi);
                         o_mark.add(roi);
                         imp.setOverlay(o_mark);
-                        if (IJ.escapePressed()) {
-                            IJ.resetEscape();
-                            break;
-                        }
+                        if (!isTracking)break;
                     } while (currentRoiX!=0 && imp.getCurrentSlice()<imp.getStackSize());
                 }
+        }
+        /**
+          保存坐标到CSV文件
+        */
+        void saveToFile() {
+                
+             StringBuilder sb = new StringBuilder();
+                sb.append("X");
+                sb.append(',');
+                sb.append("Y");
+                sb.append('\n');
+                for(int i=0;i<pos.length;i++){
+                sb.append(""+pos[i][0]);
+                sb.append(',');
+                sb.append(""+pos[i][1]);
+                sb.append('\n');
+                }
+                ij.io.SaveDialog sd = new ij.io.SaveDialog("Save pos[][]","trackedPos_"+pos[0][0]+"_"+pos[0][1],".csv");
+                String filepath = sd.getDirectory()+sd.getFileName();
+                IJ.log(filepath);
+                if(filepath=="nullnull")return;
+            try {
+                PrintWriter pw = new PrintWriter(new File(filepath));
+                pw.write(sb.toString());
+                pw.close();
+            }
+            catch (FileNotFoundException e) {
+
+            }
         }
 
         void autoMoveMouse(int x,int y) {
@@ -333,21 +368,25 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
             int key = e.getKeyCode();
 
             if (key == KeyEvent.VK_SPACE) {
-                (new MarkLoopThread()).start();
-            }else if(key == KeyEvent.VK_S){
-                 markNextFrame(); 
-            }else if(key == KeyEvent.VK_RIGHT){
-                             try {
-                Robot robot = new Robot();
-                int mask = InputEvent.BUTTON1_DOWN_MASK;
-                robot.mousePress(mask);
-                robot.mouseRelease(mask);
-            } catch (Exception ex) {
-                throw new RuntimeException(ex);
-            }   
-            }else if(key == KeyEvent.VK_LEFT){
-                 imp.setSlice(imp.getCurrentSlice()-1);            
-            }else{}
+                isTracking = !isTracking;
+                if (isTracking)
+                    (new MarkLoopThread()).start();
+            } else if (key == KeyEvent.VK_S) {
+                markNextFrame();
+            } else if (key == KeyEvent.VK_RIGHT) {
+                imp.setSlice(imp.getCurrentSlice()+1);
+            } else if (key == KeyEvent.VK_LEFT) {
+                imp.setSlice(imp.getCurrentSlice()-1);
+            } else if (key == KeyEvent.VK_ENTER) {
+                try {
+                    Robot robot = new Robot();
+                    int mask = InputEvent.BUTTON1_DOWN_MASK;
+                    robot.mousePress(mask);
+                    robot.mouseRelease(mask);
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            } else {}
         }
 
         /** Handle the key-released event  */
@@ -437,17 +476,18 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
                 }
                 public void mousePressed(MouseEvent e) {
                     super.mousePressed(e);
-                    //int modEx = e.getModifiersEx() & MouseWheelEvent.CTRL_DOWN_MASK;
+                    int modEx = e.getModifiersEx() & MouseWheelEvent.CTRL_DOWN_MASK;
                     if (e.getButton() == MouseEvent.BUTTON1) {
-                        if("zoom"!=IJ.getToolName()){
-                        currentMouseX = offScreenX(e.getX());
-                        currentMouseY = offScreenY(e.getY());
-                        imp.setRoi( currentMouseX-roiSize/2,currentMouseY-roiSize/2,roiSize,roiSize);
-                        currentRoiX = currentMouseX;
-                        currentRoiY = currentMouseY;
-                        pos[imp.getCurrentSlice()-1][0]=currentRoiX;
-                        pos[imp.getCurrentSlice()-1][1]=currentRoiY;
-                        imp.setSlice(imp.getCurrentSlice()+1);
+                        if ("zoom"!=IJ.getToolName()) {
+                            currentMouseX = offScreenX(e.getX());
+                            currentMouseY = offScreenY(e.getY());
+                            imp.setRoi( currentMouseX-roiSize/2,currentMouseY-roiSize/2,roiSize,roiSize);
+                            currentRoiX = currentMouseX;
+                            currentRoiY = currentMouseY;
+                            pos[imp.getCurrentSlice()-1][0]=currentRoiX;
+                            pos[imp.getCurrentSlice()-1][1]=currentRoiY;
+                            //Ctrl+Click means mark this frame
+                            if (modEx==0)imp.setSlice(imp.getCurrentSlice()+1);
                         }
                         /*
                                                 ByteProcessor target_ip = (ByteProcessor)imp.getProcessor().crop();
@@ -483,7 +523,7 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
 
         class CustomStackWindow extends StackWindow implements ActionListener  {
 
-                private Button button1, button2;
+                private Button btnAuto, btnStep, btnSave,btnClear;
 
                 CustomStackWindow(ImagePlus imp, ImageCanvas ic) {
                     super(imp, ic);
@@ -494,12 +534,18 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
                 void addPanel() {
                     Panel panel = new Panel();
                     panel.setLayout(new GridLayout(1, 4));
-                    button1 = new Button("Start[space]");
-                    button1.addActionListener(this);
-                    panel.add(button1);
-                    button2 = new Button("Step");
-                    button2.addActionListener(this);
-                    panel.add(button2);
+                    btnAuto = new Button("Start[space]");
+                    btnAuto.addActionListener(this);
+                    panel.add(btnAuto);
+                    btnStep = new Button("Step");
+                    btnStep.addActionListener(this);
+                    panel.add(btnStep);
+                    btnSave = new Button("Save");
+                    btnSave.addActionListener(this);
+                    panel.add(btnSave);
+                    btnClear = new Button("Clear");
+                    btnClear.addActionListener(this);
+                    panel.add(btnClear);
                     panel.add(new Label(""));
                     add(panel);
                     pack();
@@ -510,10 +556,20 @@ public class SemiAuto_Track implements PlugIn,KeyListener {
 
                 public void actionPerformed(ActionEvent e) {
                     Object b = e.getSource();
-                    if (b==button1) {
-                        (new MarkLoopThread()).start();
-                    } else if (b== button2) {
+                    if (b==btnAuto) {
+                        isTracking = !isTracking;
+                        if (isTracking) {
+                            btnAuto.setLabel("Stop[space]");
+                            (new MarkLoopThread()).start();
+                        } else {
+                            btnAuto.setLabel("Start[space]");
+                        }
+                    } else if (b== btnStep) {
                         markNextFrame();
+                    } else if (b== btnSave) {
+                        saveToFile();
+                    } else if (b== btnClear) {
+                        for(int i=0;i<pos.length;i++){pos[i][0]=0;pos[i][1]=0;}
                     }
                     ImageCanvas ic = imp.getCanvas();
                     if (ic!=null)
