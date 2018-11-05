@@ -11,6 +11,12 @@ import java.lang.Math;
 
 
 /** This plugin pops up a panel holding buttons to correct tiled (large) image **/
+/*
+    This plugin works better with more tiling numbers.
+    User must input 2 of the first 3 lines, and click a button to deduce the last parameter.
+    The slider is used to specifiy the overlap range whoes default is 50% of the small area size
+    click the "show graph" to see line projection and fix curves.
+*/
 public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEventListener,FocusListener {
 	private static Frame instance;
 	private boolean logging;
@@ -25,6 +31,9 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
         public int NUM_Y = 10;
         public double OVRLP = 0.1; // overlap
         
+        public double fixRange = 0.5; // make smooth connection from "fixRange" of small size from merge center
+                                      // max is 0.5, which means connect from centers of two neibour area
+        
         public double [] projX;
         public double [] projY;
         
@@ -34,6 +43,7 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
         public TextField TF_num_X, TF_num_Y, TF_size_X, TF_size_Y, TF_OVRLP;
         public Choice imgChooser;
         public Label sizeInfo;
+        public Scrollbar sclRange;
         
 	public Tiling_Panel() {
 		super("Tiling Panel");
@@ -53,7 +63,7 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
 		IJ.addEventListener(this);
 		setLayout(new FlowLayout());
 		Panel panel = new Panel();
-		panel.setLayout(new GridLayout(7, 1, 10, 10));
+		panel.setLayout(new GridLayout(8, 1, 10, 10));
 
                 // GridLayout line 1
                 imgChooser = new Choice();
@@ -117,13 +127,31 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
 		    inputPanel.add(cb3);
                 panel.add(inputPanel);
                 // GridLayout line 6
-		Button b = new Button("Do projection");
-		b.addActionListener(this);
-		panel.add(b);
+                inputPanel = new Panel();
+                inputPanel.setLayout(new GridLayout(1,5));
+                    inputPanel.add(new Label("Overlap range (1%-50% of each area size):"));
+                    sclRange = new Scrollbar(Scrollbar.HORIZONTAL,100,10,1,100);
+                    sclRange.addAdjustmentListener( 
+                        new AdjustmentListener() {
+                                public void adjustmentValueChanged(AdjustmentEvent e) {
+                                        fixRange = ((double)sclRange.getValue())/((double)sclRange.getMaximum())*0.5;
+                                        return;
+                                }
+                        });
+                    inputPanel.add(sclRange);
+                panel.add(inputPanel);
                 // GridLayout line 7
-		b = new Button("Do correction");
-		b.addActionListener(this);
-		panel.add(b);
+                inputPanel = new Panel();
+                inputPanel.setLayout(new GridLayout(1,2));
+		    Button b = new Button("show graph");
+		    b.addActionListener(this);
+		    inputPanel.add(b);
+
+		    b = new Button("Do correction");
+		    b.addActionListener(this);
+		    inputPanel.add(b);
+                panel.add(inputPanel);
+                
 		add(panel);
 		pack();
 		GUI.center(this);
@@ -164,9 +192,119 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
                 }
                 return;
         }
-        
         /******************************************/
         // create line intensity projection on X/Y
+        // method 2
+        // the correction is done on "fixRange" of the small
+        // size, which is adjustable
+        /******************************************/
+        public void intensityProjection2(){
+                projX = new double[largeX];
+                projY = new double[largeY];
+
+                ImageProcessor ipr = ip.getProcessor();
+
+                for(int j=0;j<largeY;j++){
+                        for(int i=0;i<largeX;i++){
+                                int v = ipr.get(i,j);
+                                projX[i]+=v;
+                                projY[j]+=v;
+                        }
+                        
+                }
+                
+                fixCurvX = new double[largeX];
+                fixCurvY = new double[largeY];
+                
+                
+               
+                int nonOverlap = (int)((1-OVRLP)*smallX+0.5);
+                int overlap =(int)(OVRLP*smallX+0.5);
+                double range = fixRange*smallX-overlap/2;
+                
+                for(int i=0;i<largeX;i++){
+                        int n = (int)((double)i/nonOverlap+0.5);
+                        if(n>0 && n<NUM_X){
+                                
+                                int x1 = (int)(n*nonOverlap + (double)overlap/2 - range+0.5);
+                                int x2 = (int)(n*nonOverlap + (double)overlap/2 + range+0.5);
+                                
+                                if(i>x1 && i<x2){
+                                int idx = i-x1;
+                                double delta = projX[x2] - projX[x1];
+                                double k = delta*idx/(x2-x1);
+                                double absCurvValue = projX[x1]+k;
+                                fixCurvX[i]= absCurvValue/projX[i];
+                                }else{
+                                        fixCurvX[i]=1;
+                                }
+                        }else{
+                                fixCurvX[i] = 1;
+                        }
+                
+                }
+
+                nonOverlap = (int)((1-OVRLP)*smallY+0.5);
+                overlap =(int)(OVRLP*smallY+0.5);
+                range = fixRange*smallY-overlap/2;
+                
+                for(int i=0;i<largeY;i++){
+                        int n = (int)((double)i/nonOverlap+0.5);
+                        if(n>0 && n <NUM_Y ){
+                                int x1 = (int)(n*nonOverlap +(double)overlap/2 - range+0.5);
+                                int x2 = (int)(n*nonOverlap +(double)overlap/2 + range+0.5);
+                                
+                                if(i>x1 && i<x2){
+                                int idx = i-x1;
+                                double delta = projY[x2] - projY[x1];
+                                double k = delta*idx/(x2-x1);
+                                double absCurvValue = projY[x1]+k;
+                                fixCurvY[i]= absCurvValue/projY[i];
+                                }else{
+                                        fixCurvY[i] = 1;
+                                }
+                        }else{
+                                fixCurvY[i] = 1;
+                        }
+                
+                }
+                
+                return;
+        }
+
+        public void showGraph(){
+                double[] x = new double[largeX];
+                double[] y = new double[largeX];
+                for(int i=0;i<largeX;i++){
+                        x[i]=(double)i;
+                        y[i]=projX[i]*fixCurvX[i];
+                }
+                Plot plot = new Plot("projection and fix in X","x","y");
+                plot.setColor("red");
+                plot.addPoints(x,projX,Plot.LINE);
+                plot.setColor("blue");
+                plot.addPoints(x,y,Plot.LINE);
+                plot.show();
+                
+                x = new double[largeY];
+                y = new double[largeY];
+                for(int i=0;i<largeY;i++){
+                        x[i]=(double)i;
+                        y[i]=projY[i]*fixCurvY[i];
+                }                
+                plot = new Plot("projection and fix in Y","x","y");
+                plot.setColor("red");
+                plot.addPoints(x,projY,Plot.LINE);
+                plot.setColor("blue");
+                plot.addPoints(x,y,Plot.LINE);
+                plot.show();
+                
+                return;
+        }        
+        /******************************************/
+        // create line intensity projection on X/Y
+        // the correction is done by half of the small
+        // size
         /******************************************/
         public void intensityProjection(){
                 projX = new double[largeX];
@@ -251,7 +389,7 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
                 return;
         }
         /******************************************/
-        // fix it
+        // fix it on itself
         /******************************************/
         public void fixLargeImage(){
                 ImageProcessor ipr = ip.getProcessor();
@@ -263,13 +401,34 @@ public class Tiling_Panel extends PlugInFrame implements ActionListener, IJEvent
                         }
                 }  
                 ip.updateAndDraw();                
-        }       
+        } 
+        /******************************************/
+        // fix it 2
+        // create new image
+        /******************************************/
+        public void fixLargeImage2(){
+                ImagePlus imp = IJ.createImage("Untitled", "16-bit black", largeX, largeY, 1);
+                ImageProcessor ipr2 = imp.getProcessor(); 
+                
+                ImageProcessor ipr = ip.getProcessor();
+                for(int j=0;j<largeY;j++){
+                        for(int i=0;i<largeX;i++){
+                                int v = ipr.get(i,j);
+                                ipr2.set(i, j, (int)(v*fixCurvX[i]*fixCurvY[j]));
+                        }
+                }  
+                imp.show();
+                IJ.run(imp, "Enhance Contrast", "saturated=0.35");
+        }         
         
 	public void actionPerformed(ActionEvent e) {
 
-		if (e.getActionCommand().startsWith("Do")){
-			if(e.getActionCommand() =="Do projection")intensityProjection();
-                        if(e.getActionCommand() =="Do correction")fixLargeImage();
+		if(e.getActionCommand() =="show graph"){
+                        intensityProjection2();
+                        showGraph();
+                }else if(e.getActionCommand() =="Do correction"){
+                        intensityProjection2();
+                        fixLargeImage2();
 
 		}else
 			calculate(e.getActionCommand());
